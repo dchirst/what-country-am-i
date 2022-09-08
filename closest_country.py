@@ -1,3 +1,5 @@
+import time
+
 from typing import Union
 
 import geopandas as gpd
@@ -7,6 +9,8 @@ import streamlit as st
 from shapely.affinity import scale, rotate, translate
 import matplotlib.pyplot as plt
 from shapely.geometry import Polygon, MultiPolygon
+from numba import njit
+from hashlib import sha1
 
 
 # # Initialize connection.
@@ -48,7 +52,7 @@ def cost_function(im: Polygon, country: Union[Polygon, MultiPolygon]) -> float:
     return im.intersection(country).area/max(im.area, country.area)
 
 
-def cost(im, country, scale_val, angle, xoff, yoff) -> float:
+def cost(im, country, poly_map, scale_val, angle, xoff, yoff) -> float:
     """
     Given a set of transformations for the image, calculates the cost between the image polygon and the country polygon
     :param im: Image polygon to compare with country
@@ -59,23 +63,33 @@ def cost(im, country, scale_val, angle, xoff, yoff) -> float:
     :param yoff: Translation in the y-axis by which image is moved
     :return: Similarity between 0 and 1 (higher is more similar)
     """
-    im_translated = scale(rotate(translate(im, xoff=xoff, yoff=yoff), angle=angle), xfact=scale_val, yfact=scale_val)
+    h = hash(f"{scale_val}{angle}{xoff}{yoff}")
+    if h in poly_map:
+        im_translated = poly_map[h]
+    else:
+        im_translated = scale(rotate(translate(im, xoff=xoff, yoff=yoff), angle=angle), xfact=scale_val, yfact=scale_val)
+        poly_map[h] = im_translated
     return cost_function(im_translated, country)
 
-
-def gradient_descent(country, im, iterations=100, starting_angle=0):
+def gradient_descent(country, im, iterations=100, starting_angle=0, poly_map=None):
     p = np.array([1, starting_angle, 0, 0])
     inc = np.array([0.001, 1, 0.001, 0.001])
-    prev_cost = cost(im, country, *p)
+    prev_cost = cost(im, country, poly_map, *p)
     p_list = []
+    cost_map = {}
     for it in range(iterations):
         dp = inc
-        cost_iterations = []
         for i in range(len(dp)):
             test_p = p
             test_p[i] = p[i] + inc[i]
-            cost_value = cost(im, country, *test_p)
-            cost_iterations.append(cost_value)
+            h = sha1(p)
+            if h in cost_map:
+                cost_value = cost_map[h]
+            else:
+                cost_value = cost(im, country, poly_map, *test_p)
+                cost_map[h] = cost_value
+            if abs(cost_value - prev_cost) < 1e-5:
+                return p_list, prev_cost
             if cost_value > prev_cost:
                 dp[i] = inc[i]
                 prev_cost = cost_value
@@ -93,30 +107,37 @@ def gradient_descent(country, im, iterations=100, starting_angle=0):
 
 @st.experimental_memo(ttl=600)
 def find_closest_country(polygon, _pbar=None):
-    wgs84 = pyproj.CRS('EPSG:4326')
-
+    start_time = time.time()
     countries = load_countries()
     max_cost = 0
-    best_country = best_theta = best_cost = 0
+    best_country = best_cost = 0
     length = countries.shape[0]
     print(countries)
     print(polygon)
+    poly_map = {}
+    max_cost_difference = 0
     for idx, country in countries.iterrows():
+        costs = []
         # country_reprojected = gpd.GeoSeries(country).to_crs(azimuthal_projection)
         for a in (0, 90, 180, 270):
-            theta, c_cost = gradient_descent(country.geometry, polygon, iterations=100, starting_angle=a)
-
+            theta, c_cost = gradient_descent(country.geometry, polygon, iterations=100, starting_angle=a, poly_map=poly_map)
             if c_cost > max_cost:
                 max_cost = c_cost
                 best_country = country["name"]
-                best_theta = theta
                 best_cost = c_cost
                 print("New best country:", best_country, best_cost)
+            print(max_cost, c_cost)
+            if max_cost - c_cost > 0.5:
+                print("breaking")
+                break
+            print(f"{country['name']}: {c_cost}")
+        if _pbar:
+            _pbar.progress(idx / length)
 
-            print(f"{country['name']}: {best_cost}")
-            if _pbar:
-                _pbar.progress(idx / length)
+    print(max_cost_difference)
 
+
+    print("Time taken:", time.time() - start_time)
     return countries[countries["name"] == best_country], best_cost
 
 
@@ -130,6 +151,11 @@ def make_country_plot(country: gpd.GeoSeries):
 
 if __name__ == '__main__':
     c = load_countries()
-
-    c.to_file("countries.geojson")
+    for i in range(c.shape[0]):
+        country = c[c.index == i]
+        country.plot()
+        [""]
+        print(country.head().name.values[0])
+        plt.title(f"{country.head().name.values[0]}")
+        plt.show()
 
