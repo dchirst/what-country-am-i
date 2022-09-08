@@ -3,6 +3,6 @@ numpy
 shapely
 pyproj
 matplotlib
-opencv-python
+opencv-python-headless
 streamlit
 rembg
