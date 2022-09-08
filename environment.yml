@@ -1,0 +1,18 @@
+name: csi
+channels:
+  - anaconda
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - geopandas
+  - numpy
+  - shapely
+  - pyproj
+  - matplotlib
+  - opencv
+  - pip:
+    - streamlit
+    - rembg
+

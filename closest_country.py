@@ -2,7 +2,6 @@ from typing import Union
 
 import geopandas as gpd
 import numpy as np
-import psycopg2
 import pyproj
 import streamlit as st
 from shapely.affinity import scale, rotate, translate
