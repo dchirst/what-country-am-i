@@ -24,7 +24,6 @@ def im_to_polygon(mask):
     mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
     contours, hierarchy = cv2.findContours(mask,
                                            cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    print(len(Polygon(np.squeeze(contours[0])).exterior.xy))
     print(mask.shape)
     for contour in contours:
         cv2.drawContours(mask, contour, -1, (255, 0, 0), 3)
@@ -32,7 +31,8 @@ def im_to_polygon(mask):
     plt.imshow(mask)
     fig.savefig("test2.png")
     contours = map(np.squeeze, contours)  # removing redundant dimensions
-    polygons = map(Polygon, contours)  # converting to Polygons
+    filtered_contours = filter(lambda x: len(x) > 2, contours)
+    polygons = map(Polygon, filtered_contours)  # converting to Polygons
     multipolygon = MultiPolygon(polygons)
     polygon = max(multipolygon, key=lambda a: a.area)
     x, y = polygon.centroid.coords[0]
