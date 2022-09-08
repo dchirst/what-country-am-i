@@ -1,6 +1,5 @@
-name: csi
+name: country-env
 channels:
-  - anaconda
   - conda-forge
   - defaults
 dependencies:
