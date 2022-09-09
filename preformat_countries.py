@@ -1,52 +1,63 @@
-import psycopg2
-import streamlit as st
-import csv
-import geopandas as gpd
+from typing import Union
+
+import matplotlib.pyplot as plt
 from shapely.affinity import scale, translate
-from sqlalchemy import text, create_engine
-from sqlalchemy.future import engine
+from shapely.geometry import MultiPolygon, Polygon
+import geopandas as gpd
+from pyproj import Proj
+import warnings
 
 
-# Initialize connection.
-# Uses st.experimental_singleton to only run once.
-@st.experimental_singleton
-def init_connection():
-    return psycopg2.connect(**st.secrets["postgres"])
+def reproject_country(country: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    centroid = country.geometry.centroid.values[0]
+    lon, lat = centroid.x, centroid.y
+    azimuthal_projection = Proj(proj='aeqd', datum='WGS84', lon_0=lon, lat_0=lat, units='m').crs
+    country_reprojected_geom = country.to_crs(azimuthal_projection).geometry
 
-conn = init_connection()
-
-# Perform query.
-# Uses st.experimental_memo to only rerun when the query changes or after 10 min.
-@st.experimental_memo(ttl=600)
-def run_query(query):
-    with conn.cursor() as cur:
-        cur.execute(query)
-        return cur.fetchall()
+    return country_reprojected_geom
 
 
-def make_country_unit(poly):
-    x, y = poly.centroid.coords[0]
-    minx, miny, maxx, maxy = poly.bounds
-    fact = 1 / max(x-minx, maxx-x, maxy-y, y-miny)
-    unit_poly = scale(poly, xfact=fact, yfact=fact)
+def transform_country(country: gpd.GeoDataFrame) -> Union[Polygon, MultiPolygon]:
+    x, y = country.centroid.values[0].coords[0]
+    minx, miny, maxx, maxy = tuple(country.values.bounds[0])
+    fact = 1 / max(x - minx, maxx - x, maxy - y, y - miny)
+
+    unit_poly = scale(country.values[0], xfact=fact, yfact=fact)
 
     x_translation, y_translation = unit_poly.centroid.coords[0]
     final_poly = translate(unit_poly, xoff=-x_translation, yoff=-y_translation)
+
     return final_poly
 
 
 if __name__ == '__main__':
-    # engine = create_engine('postgresql://dhirst:postgis@localhost/postgis')
-    # print(engine.connect())
-    #
-    # gdf = gpd.GeoDataFrame.from_postgis("SELECT admin, wkb_geometry FROM destination_table;", conn, geom_col="wkb_geometry")
-    # gdf.rename(columns={
-    #     "admin": "name",
-    #     "wkb_geometry": "geometry"
-    # }, inplace=True)
-    # gdf["geometry"] = gdf.geometry.apply(make_country_unit)
-    # with engine.connect() as connection:
-    #     gdf.to_postgis(name="countries", con=connection)
-    wgs84 = pyproj.CRS
-    df = gpd.read_file("/Users/dhirst/Downloads/countries.geojson")
-    print(df)
+    warnings.filterwarnings("ignore")
+    c = gpd.read_file("/Users/dhirst/Downloads/countries.geojson")
+
+    for i in range(c.shape[0]):
+        country = c[c.index == i]
+
+        country_reprojected_geom = reproject_country(country)
+
+        final_poly = transform_country(country_reprojected_geom)
+
+        final_poly_simplified = final_poly.simplify(0.001)
+
+        # Plot reprojected, normalised country
+        country_reprojected_geom.geometry = [final_poly_simplified]
+        country_reprojected_geom.plot()
+        plt.title(f"{country.head().ADMIN.values[0]}")
+        plt.show()
+
+        keep = input("keep?: ")
+        if keep == "y":
+            c[c.index == i] = country_reprojected_geom
+            print(c[c.index == i])
+        else:
+            c.drop(index=i, inplace=True)
+            print(c.shape)
+
+        plt.close()
+
+    c.to_file("countries_simplified.geojson")
+

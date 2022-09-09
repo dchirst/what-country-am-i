@@ -6,8 +6,8 @@ from shapely.affinity import scale, rotate, translate
 
 
 st.title("Which country am I?")
-st.text("Simply upload any image and find out which country is most similar.\n"
-        "")
+st.write("Simply upload any image and find out which country is most similar.\n"
+         "Built by [Dan Hirst](https://github.com/dchirst)")
 
 im_stream = st.file_uploader("Upload an image you want to test:")
 
@@ -18,17 +18,13 @@ if im_stream is not None:
     # Convert to a polygon to compare with the countries
     poly = im_to_polygon(im)
 
-    # # Plot the polygon that we will be comparing
-    f, ax = plt.subplots()
-
-
     # Perform country comparison algorithm
     pbar = st.progress(0)
     closest_country, cost, theta = find_closest_country(poly, pbar)
-    print(theta)
-    scale_val, angle, xoff, yoff = tuple(theta)
-    # Plot the final country
+
+    # Plot the final country with image overlayed
     fig, ax = plt.subplots()
+    scale_val, angle, xoff, yoff = tuple(theta)
     poly_transformed = scale(rotate(translate(poly, xoff=xoff, yoff=yoff), angle=angle), xfact=scale_val, yfact=scale_val)
     ax.plot(*poly_transformed.exterior.xy)
     plt.axis('off')
