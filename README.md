@@ -1,4 +1,4 @@
-# Which Country Am I?
+# What Country Am I?
  
 Streamlit App for finding which country looks most like any image.
 
