@@ -130,9 +130,9 @@ def find_closest_country(polygon, _pbar=None):
                 best_cost = c_cost
                 best_theta = theta
                 print("New best country:", best_country, best_cost, theta)
-            # if max_cost - c_cost > 0.5:
-            #     print("breaking")
-            #     break
+            if max_cost - c_cost > 0.4:
+                print("breaking")
+                break
             print(f"{country['ADMIN']}: {c_cost}")
         if _pbar:
             _pbar.progress(idx / length)
