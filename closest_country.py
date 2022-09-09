@@ -1,5 +1,6 @@
 import time
 
+from shapely.errors import TopologicalError
 from typing import Union
 
 import geopandas as gpd
@@ -11,7 +12,6 @@ import matplotlib.pyplot as plt
 from shapely.geometry import Polygon, MultiPolygon
 from numba import njit
 from hashlib import sha1
-
 
 # # Initialize connection.
 # # Uses st.experimental_singleton to only run once.
@@ -32,7 +32,7 @@ from hashlib import sha1
 
 
 def load_countries():
-    return gpd.read_file("countries.geojson")
+    return gpd.read_file("countries_simplified.geojson")
     # return gpd.GeoDataFrame.from_postgis("SELECT name, geometry FROM countries;",
     #                                      conn,
     #                                      geom_col="geometry")
@@ -88,8 +88,8 @@ def gradient_descent(country, im, iterations=100, starting_angle=0, poly_map=Non
             else:
                 cost_value = cost(im, country, poly_map, *test_p)
                 cost_map[h] = cost_value
-            if abs(cost_value - prev_cost) < 1e-5:
-                return p_list, prev_cost
+            # if abs(cost_value - prev_cost) < 1e-5:
+            #     return p + dp, prev_cost
             if cost_value > prev_cost:
                 dp[i] = inc[i]
                 prev_cost = cost_value
@@ -99,18 +99,17 @@ def gradient_descent(country, im, iterations=100, starting_angle=0, poly_map=Non
         # print(it, max(cost_iterations))
 
         p = p + dp
-        if it % 10 == 0:
-            p_list.append(p)
+        # if it % 10 == 0:
+        #     p_list.append(p)
 
-    return p_list, prev_cost
+    return p, prev_cost
 
 
-@st.experimental_memo(ttl=600)
 def find_closest_country(polygon, _pbar=None):
     start_time = time.time()
     countries = load_countries()
     max_cost = 0
-    best_country = best_cost = 0
+    best_country = best_cost = best_theta = 0
     length = countries.shape[0]
     print(countries)
     print(polygon)
@@ -120,17 +119,21 @@ def find_closest_country(polygon, _pbar=None):
         costs = []
         # country_reprojected = gpd.GeoSeries(country).to_crs(azimuthal_projection)
         for a in (0, 90, 180, 270):
-            theta, c_cost = gradient_descent(country.geometry, polygon, iterations=100, starting_angle=a, poly_map=poly_map)
+            try:
+                theta, c_cost = gradient_descent(country.geometry, polygon, iterations=100, starting_angle=a, poly_map=poly_map)
+            except TopologicalError:
+                print(f"TOPOLOGICAL ERROR for {country['ADMIN']}")
+                continue
             if c_cost > max_cost:
                 max_cost = c_cost
-                best_country = country["name"]
+                best_country = country["ADMIN"]
                 best_cost = c_cost
-                print("New best country:", best_country, best_cost)
-            print(max_cost, c_cost)
-            if max_cost - c_cost > 0.5:
-                print("breaking")
-                break
-            print(f"{country['name']}: {c_cost}")
+                best_theta = theta
+                print("New best country:", best_country, best_cost, theta)
+            # if max_cost - c_cost > 0.5:
+            #     print("breaking")
+            #     break
+            print(f"{country['ADMIN']}: {c_cost}")
         if _pbar:
             _pbar.progress(idx / length)
 
@@ -138,7 +141,7 @@ def find_closest_country(polygon, _pbar=None):
 
 
     print("Time taken:", time.time() - start_time)
-    return countries[countries["name"] == best_country], best_cost
+    return countries[countries["ADMIN"] == best_country], best_cost, best_theta
 
 
 def make_country_plot(country: gpd.GeoSeries):
@@ -149,13 +152,73 @@ def make_country_plot(country: gpd.GeoSeries):
     return fig
 
 
+
+
 if __name__ == '__main__':
-    c = load_countries()
+    from pyproj import crs, Transformer, Proj
+    import warnings
+
+    warnings.filterwarnings("ignore")
+    c = gpd.read_file("/Users/dhirst/Downloads/countries.geojson")
+    print(c.columns)
+    print(len(Country))
+    print(c)
     for i in range(c.shape[0]):
         country = c[c.index == i]
-        country.plot()
-        [""]
-        print(country.head().name.values[0])
-        plt.title(f"{country.head().name.values[0]}")
+
+        centroid = country.geometry.centroid.values[0]
+        lon, lat = centroid.x, centroid.y
+        azimuthal_projection = Proj(proj='aeqd', datum='WGS84', lon_0=lon, lat_0=lat, units='m').crs
+        country_reprojected = country.to_crs(azimuthal_projection)
+        country_reprojected_geom = country_reprojected.head().geometry
+        x, y = country_reprojected_geom.centroid.values[0].coords[0]
+        minx, miny, maxx, maxy = tuple(country_reprojected_geom.values.bounds[0])
+        fact = 1 / max(x - minx, maxx - x, maxy - y, y - miny)
+
+        unit_poly = scale(country_reprojected_geom.values[0], xfact=fact, yfact=fact)
+
+        x_translation, y_translation = unit_poly.centroid.coords[0]
+        final_poly = translate(unit_poly, xoff=-x_translation, yoff=-y_translation)
+        multi = country.geometry.type.values[0].startswith("Multi")
+
+        if multi:
+            n = 0
+            # iterate over all parts of multigeometry
+            for part in final_poly:
+                n += len(part.exterior.coords)
+        else:  # if single geometry like point, linestring or polygon
+            n = len(final_poly.exterior.coords)
+
+
+        final_poly_simplifies = final_poly.simplify(0.001)
+
+        if multi:
+            m = 0
+            # iterate over all parts of multigeometry
+            for part in final_poly_simplifies:
+                m += len(part.exterior.coords)
+        else:  # if single geometry like point, linestring or polygon
+            m = len(final_poly_simplifies.exterior.coords)
+
+        print(country.head().ADMIN.values[0], n, m)
+        country_reprojected.geometry = [final_poly_simplifies]
+        country_reprojected.plot()
+
+        print(country_reprojected.head().ADMIN.values[0])
+        plt.title(f"{country_reprojected.head().ADMIN.values[0]}")
         plt.show()
+
+        keep = input("keep?: ")
+        if keep == "y":
+            c[c.index == i] = country_reprojected
+            print(c[c.index == i])
+        else:
+            c.drop(index=i, inplace=True)
+            print(c.shape)
+
+        plt.close()
+
+
+    print(c.shape)
+    c.to_file("countries_simplified.geojson")
 

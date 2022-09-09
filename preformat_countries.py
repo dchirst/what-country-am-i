@@ -36,14 +36,17 @@ def make_country_unit(poly):
 
 
 if __name__ == '__main__':
-    engine = create_engine('postgresql://dhirst:postgis@localhost/postgis')
-    print(engine.connect())
-
-    gdf = gpd.GeoDataFrame.from_postgis("SELECT admin, wkb_geometry FROM destination_table;", conn, geom_col="wkb_geometry")
-    gdf.rename(columns={
-        "admin": "name",
-        "wkb_geometry": "geometry"
-    }, inplace=True)
-    gdf["geometry"] = gdf.geometry.apply(make_country_unit)
-    with engine.connect() as connection:
-        gdf.to_postgis(name="countries", con=connection)
+    # engine = create_engine('postgresql://dhirst:postgis@localhost/postgis')
+    # print(engine.connect())
+    #
+    # gdf = gpd.GeoDataFrame.from_postgis("SELECT admin, wkb_geometry FROM destination_table;", conn, geom_col="wkb_geometry")
+    # gdf.rename(columns={
+    #     "admin": "name",
+    #     "wkb_geometry": "geometry"
+    # }, inplace=True)
+    # gdf["geometry"] = gdf.geometry.apply(make_country_unit)
+    # with engine.connect() as connection:
+    #     gdf.to_postgis(name="countries", con=connection)
+    wgs84 = pyproj.CRS
+    df = gpd.read_file("/Users/dhirst/Downloads/countries.geojson")
+    print(df)
