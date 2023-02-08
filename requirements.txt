@@ -1,6 +1,6 @@
 geopandas
 numpy
-shapely
+shapely<2
 pyproj
 matplotlib
 opencv-python-headless
